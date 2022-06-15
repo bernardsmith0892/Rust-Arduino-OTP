@@ -5,7 +5,7 @@ mod creating_digests {
     #[test]
     fn abc() {
         let msg = b"abc";
-        let validator = byte_helper::hexstring_to_digest("a9993e364706816aba3e25717850c26c9cd0d89d").unwrap();
+        let validator = hex!("a9993e364706816aba3e25717850c26c9cd0d89d");
         let digest = sha1::gen_sha1_digest(msg, None).unwrap();
         assert_eq!(digest, validator);
     }

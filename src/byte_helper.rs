@@ -58,14 +58,3 @@ pub fn hexstring_to_digest(hexstring: &str) -> Result<[u8; sha1::DIGEST_SIZE], B
 
     Ok(digest)
 }
-
-pub fn otp6_to_chars(num: u32) -> [char; 6] {
-    let mut out_bytes = [' '; 6];
-
-    for i in 0..6 {
-        let digit = num / 10_u32.pow(6-i-1) % 10;
-        out_bytes[i as usize] = ((0x30 + digit) as u8) as char;
-    }
-
-    out_bytes
-}

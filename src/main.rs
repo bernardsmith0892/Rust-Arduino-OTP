@@ -5,6 +5,7 @@ use panic_halt as _;
 
 mod sha1_tests;
 
+pub mod tty;
 pub mod byte_helper;
 pub mod sha1;
 
@@ -12,7 +13,6 @@ pub mod sha1;
 fn main() -> ! {
     let dp = arduino_hal::Peripherals::take().unwrap();
     let pins = arduino_hal::pins!(dp);
-    let mut serial = arduino_hal::default_serial!(dp, pins, 9600);
 
     /*
      * For examples (and inspiration), head to
@@ -26,23 +26,24 @@ fn main() -> ! {
 
     let mut led = pins.d13.into_output();
 
-    let key = b"12345678901234567890";
-    let mut counter = 0;
+    let mut tty = tty::TTY::new(arduino_hal::default_serial!(dp, pins, 9600));
     loop {
-        let otp = sha1::gen_sha1_hotp(key, counter, 6).unwrap();
-        let otp_chars = byte_helper::otp6_to_chars(otp);
-        for digit in otp_chars {
-            ufmt::uwrite!(&mut serial, "{}", digit).unwrap();
-        }
-        ufmt::uwrite!(&mut serial, "\n").unwrap();
+        // let otp = sha1::gen_sha1_hotp(key, counter, 6).unwrap();
+        // for i in 0..6 {
+            // let digit = otp / 10_u32.pow(6-i-1) % 10;
+            // ufmt::uwrite!(&mut serial, "{}", digit).unwrap();
+        // }
+        // ufmt::uwrite!(&mut serial, "\n").unwrap();
         
         // *** ufmt can only support up to u16/i16 numbers ***
         // ufmt::uwriteln!(&mut serial, "{}", 65_535_u16).unwrap();
         // ufmt::uwriteln!(&mut serial, "{}", 65_536_u16).unwrap();
         // ufmt::uwriteln!(&mut serial, "{}", 655_536_u32).unwrap();
 
+        tty.wait_for_byte();
+
         led.toggle();
-        counter += 1;
-        arduino_hal::delay_ms(1000);
+        arduino_hal::delay_ms(10);
+        led.toggle();
     }
 }

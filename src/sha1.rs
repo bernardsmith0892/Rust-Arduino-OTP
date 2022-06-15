@@ -35,7 +35,7 @@ pub fn gen_sha1_hotp(key: &[u8], counter: u64, digits: u32) -> Result<u32, OtpEr
     let truncated_value: u32 = byte_helper::bytes_to_u32(offset_bytes) & 0x7fffffff;
 
     // 3. Return final value with specified number of digits
-    Ok(truncated_value % 10u32.pow(digits))
+    Ok((truncated_value as u64 % 10u64.pow(digits)) as u32)
 }
 
 pub fn gen_sha1_hmac(key: &[u8], message: &[u8]) -> Result<[u8; DIGEST_SIZE], OtpError> {
