@@ -2,7 +2,6 @@ use crate::byte_helper;
 
 const BLOCK_SIZE: usize = 64;
 const PAD_TARGET: usize = 56;
-const MAX_KEY_SIZE: usize = 56;
 pub const DIGEST_SIZE: usize = 20;
 
 #[derive(Debug)]
@@ -12,10 +11,6 @@ pub enum OtpError {
 }
 
 pub fn gen_sha1_hotp(key: &[u8], counter: u64, digits: u32) -> Result<u32, OtpError> {
-    if key.len() > MAX_KEY_SIZE {
-        return Err(OtpError::InputSizeError);
-    }
-
     // Convert counter value into its byte form
     let counter_bytes = byte_helper::u64_to_bytes(counter);
 
@@ -39,15 +34,13 @@ pub fn gen_sha1_hotp(key: &[u8], counter: u64, digits: u32) -> Result<u32, OtpEr
 }
 
 pub fn gen_sha1_hmac(key: &[u8], message: &[u8]) -> Result<[u8; DIGEST_SIZE], OtpError> {
-    // Only supports up to 64-byte keys (512-bits)
-    if key.len() > BLOCK_SIZE {
-        return Err(OtpError::InputSizeError);
-    }
+    let truncated_key: &[u8] = &gen_sha1_digest(key, None)?;
+    let work_key = if key.len() > BLOCK_SIZE { truncated_key } else { key };
 
     // Initialize Pads
     let mut inner_pad = [b'6'; BLOCK_SIZE];
     let mut outer_pad = [b'\\'; BLOCK_SIZE];
-    for (i, key_val) in key.iter().enumerate() {
+    for (i, key_val) in work_key.iter().enumerate() {
         inner_pad[i] ^= key_val;
         outer_pad[i] ^= key_val;
     }
@@ -77,28 +70,9 @@ pub fn gen_sha1_digest(message: &[u8], appendix_message: Option<&[u8]>) -> Resul
     let final_bytes_index: usize = total_message_length + padding_length + 1;
     let total_padded_message_length = total_message_length + padding_length + 1 + 8;
 
-    // // Copy original message
-    // for (i, byte) in padded_message[0..message.len()].iter_mut().enumerate() {
-        // *byte = message[i];
-    // }
-
-    // // Append appendix message, if one is provided
-    // if let Some(appendix) = appendix_message {
-        // for (i, byte) in padded_message[message.len()..message.len()+appendix.len()].iter_mut().enumerate() {
-            // *byte = appendix[i];
-        // }
-    // }
-
-    // // Append `0b10000000` as the first padding byte
-    // padded_message[message.len() + appendix_message.unwrap_or(&[]).len()] = 0x80;
-
     // Determine the byte representation of the total message length
     let bit_length: u64 = total_message_length as u64 * 8;
     let length_bytes: [u8; 8] = byte_helper::u64_to_bytes(bit_length);
-
-    // for (i, byte) in padded_message[BLOCK_SIZE-8..BLOCK_SIZE].iter_mut().enumerate() {
-        // *byte = length_bytes[i];
-    // }
 
     // **********************************************
     // *** 5.3.1 - Setting the Initial Hash Value ***
@@ -150,11 +124,7 @@ pub fn gen_sha1_digest(message: &[u8], appendix_message: Option<&[u8]>) -> Resul
         }
 
         // 2. Initialize working variables
-        let mut a: u32 = h[0];
-        let mut b: u32 = h[1];
-        let mut c: u32 = h[2];
-        let mut d: u32 = h[3];
-        let mut e: u32 = h[4];
+        let [mut a, mut b, mut c, mut d, mut e] = h;
 
         // 3. Process message schedule
         for t in 0..80 {
@@ -164,19 +134,17 @@ pub fn gen_sha1_digest(message: &[u8], appendix_message: Option<&[u8]>) -> Resul
             .wrapping_add(k(t))
             .wrapping_add(w[t]);
 
-            e = d;
-            d = c;
-            c = rotate_left(b, 30);
-            b = a;
-            a = temp;
+            [e, d, c, b, a] = [d, c, rotate_left(b, 30), a, temp];
         }
 
         // 4. Compute Intermediate Hash Value
-        h[0] = h[0].wrapping_add(a);
-        h[1] = h[1].wrapping_add(b);
-        h[2] = h[2].wrapping_add(c);
-        h[3] = h[3].wrapping_add(d);
-        h[4] = h[4].wrapping_add(e);
+        h = [ 
+            h[0].wrapping_add(a),
+            h[1].wrapping_add(b),
+            h[2].wrapping_add(c),
+            h[3].wrapping_add(d),
+            h[4].wrapping_add(e)
+            ];
     }
 
     // Compile the h-array into the 20-byte digest

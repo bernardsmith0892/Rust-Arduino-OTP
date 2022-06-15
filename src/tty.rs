@@ -47,14 +47,12 @@ const COMMANDS: [Command; 3] = [
                     counter += (*byte as u64 - 0x30) * 10_u64.pow(counter_param.len() as u32 - i as u32 - 1);
                 }
 
-                ufmt::uwriteln!(&mut context.serial, "Generating OTP").unwrap();
                 let otp = sha1::gen_sha1_hotp(&context.key[0..context.key_length], counter, context.digits as u32).unwrap();
-                ufmt::uwriteln!(&mut context.serial, "Parsing Digits").unwrap();
                 for i in 0..context.digits {
                     let digit = otp as u64 / 10_u64.pow((context.digits - i) as u32 - 1) % 10;
-                    ufmt::uwrite!(&mut context.serial, "{}", digit).unwrap();
+                    ufmt::uwrite!(&mut context.serial, "{}", digit);
                 }
-                ufmt::uwrite!(&mut context.serial, "\n").unwrap();
+                ufmt::uwrite!(&mut context.serial, "\n");
             }
         },
     }
@@ -124,20 +122,6 @@ impl TTY {
         let mut args = args_buffer[0..self.cursor_position].split(|byte| *byte == b' ');
         let name = args.next();
         let param = args.next();
-
-        // if let Some(n_value) = name{
-            // for byte in n_value {
-                // ufmt::uwrite!(self.serial, "{}", *byte as char);
-            // }
-            // ufmt::uwrite!(self.serial, "\n");
-        // }
-
-        // if let Some(p_value) = param{
-            // for byte in p_value {
-                // ufmt::uwrite!(self.serial, "{}", *byte as char);
-            // }
-            // ufmt::uwrite!(self.serial, "\n");
-        // }
 
         for command in COMMANDS {
             if let Some(input_name) = name {
