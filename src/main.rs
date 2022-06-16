@@ -1,11 +1,13 @@
 #![no_std]
 #![no_main]
 
+use embedded_hal::prelude::{_embedded_hal_blocking_i2c_Read, _embedded_hal_blocking_i2c_WriteRead, _embedded_hal_blocking_i2c_Write};
 use panic_halt as _;
 
 mod sha1_tests;
 
 pub mod tty;
+pub mod rtc;
 pub mod byte_helper;
 pub mod sha1;
 
@@ -26,24 +28,42 @@ fn main() -> ! {
 
     let mut led = pins.d13.into_output();
 
-    let mut tty = tty::TTY::new(arduino_hal::default_serial!(dp, pins, 9600));
+    //let mut tty = tty::TTY::new(arduino_hal::default_serial!(dp, pins, 9600));
+    let mut i2c = arduino_hal::I2c::new(
+        dp.TWI,
+        pins.a4.into_pull_up_input(),
+        pins.a5.into_pull_up_input(),
+        50000
+    );
+    // Set time to 1 JUN 2022 - 00:00:00
+    let time = [0, 0, 0, 0b0100_0000, 1, 1, 0b1000_0110, 0b0010_0010];
+    i2c.write(0x68, &time).unwrap();
+
+    let mut serial = arduino_hal::default_serial!(dp, pins, 9600);
+    // ufmt::uwriteln!(&mut serial, "Write direction test:\r").unwrap();
+    // i2c.i2cdetect(&mut serial, arduino_hal::i2c::Direction::Write)
+        // .unwrap();
+    // ufmt::uwriteln!(&mut serial, "\r\nRead direction test:\r").unwrap();
+    // i2c.i2cdetect(&mut serial, arduino_hal::i2c::Direction::Read)
+        // .unwrap();
     loop {
-        // let otp = sha1::gen_sha1_hotp(key, counter, 6).unwrap();
-        // for i in 0..6 {
-            // let digit = otp / 10_u32.pow(6-i-1) % 10;
-            // ufmt::uwrite!(&mut serial, "{}", digit).unwrap();
+        let mut buffer = [0_u8; 7];
+        i2c.write_read(0x68, &[0x00], &mut buffer).unwrap();
+
+        let datetime = rtc::bytes_to_datetime(buffer);
+        ufmt::uwriteln!(&mut serial, "{}-{}-{} - {}:{}:{}", datetime.year, datetime.month, datetime.date, datetime.hours, datetime.minutes, datetime.seconds).unwrap();
+        // let mut buffer = [0_u8; 7];
+        // i2c.write_read(0x68, &[0x00], &mut buffer).unwrap();
+
+        // for (addr, byte) in buffer.iter().enumerate() {
+            // ufmt::uwrite!(&mut serial, "{}, ", byte).unwrap();
         // }
-        // ufmt::uwrite!(&mut serial, "\n").unwrap();
-        
-        // *** ufmt can only support up to u16/i16 numbers ***
-        // ufmt::uwriteln!(&mut serial, "{}", 65_535_u16).unwrap();
-        // ufmt::uwriteln!(&mut serial, "{}", 65_536_u16).unwrap();
-        // ufmt::uwriteln!(&mut serial, "{}", 655_536_u32).unwrap();
+        // ufmt::uwriteln!(&mut serial, "").unwrap();
+        arduino_hal::delay_ms(1000);
+        //tty.wait_for_byte();
 
-        tty.wait_for_byte();
-
-        led.toggle();
-        arduino_hal::delay_ms(10);
-        led.toggle();
+        //led.toggle();
+        //arduino_hal::delay_ms(10);
+        //led.toggle();
     }
 }
