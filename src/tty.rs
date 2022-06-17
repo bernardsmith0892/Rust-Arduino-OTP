@@ -1,7 +1,7 @@
 use arduino_hal::{hal::{port::{PD0, PD1}, Usart}, port::{Pin, mode::{Output, Input}}, clock::MHz16, pac::USART0, I2c};
-use crate::{sha1, rtc};
+use crate::{sha1, rtc, byte_helper};
 
-const COMMANDS: [Command; 5] = [
+const COMMANDS: [Command; 8] = [
     Command {
         name: *b"key  ",
         name_length: 3,
@@ -64,8 +64,8 @@ const COMMANDS: [Command; 5] = [
             let timestamp = rtc::now(&mut context.i2c).unwrap().unix_timestamp();
             let counter = timestamp / 30;
 
-            ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", timestamp).unwrap();
-            ufmt::uwriteln!(&mut context.serial, "Counter: {}", counter).unwrap();
+            //ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", timestamp).unwrap();
+            //ufmt::uwriteln!(&mut context.serial, "Counter: {}", counter).unwrap();
             let otp = sha1::gen_sha1_hotp(&context.key[0..context.key_length], counter, context.digits as u32).unwrap();
             for i in 0..context.digits {
                 let digit = otp as u64 / 10_u64.pow((context.digits - i) as u32 - 1) % 10;
@@ -85,9 +85,9 @@ const COMMANDS: [Command; 5] = [
                 }
 
                 let new_date = rtc::Datetime::from_timestamp(timestamp);
-                ufmt::uwriteln!(&mut context.serial, "{:?}", new_date).unwrap();
+                //ufmt::uwriteln!(&mut context.serial, "{:?}", new_date).unwrap();
                 let date_bytes = new_date.to_bytes();
-                ufmt::uwriteln!(&mut context.serial, "{:?}", date_bytes).unwrap();
+                //ufmt::uwriteln!(&mut context.serial, "{:?}", date_bytes).unwrap();
                 rtc::set(&mut context.i2c, date_bytes).unwrap();
             }
 
@@ -96,7 +96,68 @@ const COMMANDS: [Command; 5] = [
                 stored_date.year, stored_date.month, stored_date.date, 
                 stored_date.hours, stored_date.minutes, stored_date.seconds)
             .unwrap();
-            ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
+            //ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
+        }
+    },
+    Command {
+        name: *b"read ",
+        name_length: 4,
+        function: | context, param | {
+            if let Some(address_bytes) = param {
+                if address_bytes.len() == 4 {
+                    let mut address = [0_u8; 2];
+                    for i in (0..address_bytes.len()).step_by(2) {
+                        address[i/2] = byte_helper::hex_to_byte([address_bytes[i], address_bytes[i+1]]);
+                    }
+                    let stored_byte = rtc::read(&mut context.i2c, address).unwrap();
+                    ufmt::uwriteln!(&mut context.serial, "Bytes: {:?}", stored_byte).unwrap();
+                }
+            }
+        }
+    },
+    Command {
+        name: *b"write",
+        name_length: 5,
+        function: | context, param | {
+            if let Some(input_bytes) = param {
+                let mut args = input_bytes.split(|byte| byte == &b' ');
+                let address_bytes = args.next();
+                let data_bytes = args.next();
+                if address_bytes.is_some() && data_bytes.is_some() {
+
+                    let address_bytes = address_bytes.unwrap(); 
+                    let data_bytes = data_bytes.unwrap(); 
+                    if address_bytes.len() == 4 && data_bytes.len() == 2 {
+                        let input = [
+                            byte_helper::hex_to_byte([address_bytes[0], address_bytes[1]]),
+                            byte_helper::hex_to_byte([address_bytes[2], address_bytes[3]]),
+                            byte_helper::hex_to_byte([data_bytes[0], data_bytes[1]]),
+                        ];
+
+                        let write_result = rtc::write(&mut context.i2c, input);
+                        ufmt::uwriteln!(&mut context.serial, "{:?}", write_result).unwrap();
+                    }
+                }
+            }
+        }
+    },
+    Command {
+        name: *b"help ",
+        name_length: 4,
+        function: | context, _ | {
+            ufmt::uwriteln!(&mut context.serial, 
+           "key <OTP Key> - Set OTP key. \n\
+            key - Show current OTP key. \n\
+            digit <OTP Digits> - Set digits of OTP. (default is 6) \n\
+            digit - Show OTP digits setting. \n\
+            hotp <HOTP Counter> - Calculate OTP for a given counter value. \n\
+            totp - Calculate OTP for the current time. (step of 30) \n\
+            time <UNIX timestamp> - Set date and time. \n\
+            time - Show current date and time. \n\
+            read <xxxx> - Read RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
+            write <xxxx> <xx> - Read RTC EEPROM at the given 2-byte address. Must provide four and two hex digits. \n\
+            help - Show this help menu."
+            ).unwrap();
         }
     }
 ];
@@ -164,15 +225,15 @@ impl TTY {
 
     fn process_input(&mut self) {
         let args_buffer = self.buffer.clone();
-        let mut args = args_buffer[0..self.cursor_position].split(|byte| *byte == b' ');
+        let mut args = args_buffer[0..self.cursor_position].splitn(2, |byte| *byte == b' ');
         let name = args.next();
-        let param = args.next();
+        let params = args.next();
 
         for command in COMMANDS {
             if let Some(input_name) = name {
                 if input_name.len() == command.name_length && 
                    input_name == &command.name[0..command.name_length] {
-                    (command.function)(self, param);
+                    (command.function)(self, params);
                 }
             }
         }

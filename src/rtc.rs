@@ -3,7 +3,7 @@ use embedded_hal::prelude::{_embedded_hal_blocking_i2c_WriteRead, _embedded_hal_
 use ufmt::derive::uDebug;
 
 const DS3231_I2C_ADDRESS: u8 = 0x68;
-const _EEPROM_I2C_ADDRESS: u8 = 0x57;
+const EEPROM_I2C_ADDRESS: u8 = 0x57;
 
 #[derive(uDebug)]
 pub struct Datetime {
@@ -177,3 +177,15 @@ pub fn set(i2c: &mut I2c, new_time: [u8; 8]) -> Result<(), arduino_hal::i2c::Err
     Ok(())
 }
 
+pub fn read(i2c: &mut I2c, address: [u8; 2]) -> Result<[u8; 1], arduino_hal::i2c::Error> {
+    let mut buffer = [0_u8; 1];
+    i2c.write_read(EEPROM_I2C_ADDRESS, &address, &mut buffer)?;
+
+    Ok(buffer)
+}
+
+pub fn write(i2c: &mut I2c, input: [u8; 3]) -> Result<(), arduino_hal::i2c::Error> {
+    i2c.write(EEPROM_I2C_ADDRESS, &input)?;
+
+    Ok(())
+}

@@ -13,6 +13,24 @@ pub fn bytes_to_u32(bytes: [u8; 4]) -> u32  {
     ((bytes[3] as u32)        & 0x000000ff)
 }
 
+pub fn u16_to_bytes(word: u16) -> [u8; 2] {
+    [
+        ((word >> 8*1) & 0xff) as u8,
+        ((word >> 8*0) & 0xff) as u8,
+    ]
+}
+
+pub fn u24_to_bytes(word: u32) -> [u8; 3] {
+    // (0..4).rev()
+        // .map(|i| ((word >> 8*i) & 0xff) as u8)
+        // .collect()
+    [
+        ((word >> 8*2) & 0xff) as u8,
+        ((word >> 8*1) & 0xff) as u8,
+        ((word >> 8*0) & 0xff) as u8,
+    ]
+}
+
 pub fn u32_to_bytes(word: u32) -> [u8; 4] {
     // (0..4).rev()
         // .map(|i| ((word >> 8*i) & 0xff) as u8)
@@ -57,4 +75,22 @@ pub fn hexstring_to_digest(hexstring: &str) -> Result<[u8; sha1::DIGEST_SIZE], B
     }
 
     Ok(digest)
+}
+
+pub fn hex_to_byte(hex: [u8; 2]) -> u8 {
+    let mut byte = 0_u8;
+    byte += 16 * match hex[0] {
+        0x30..=0x39 => hex[0] as u8 - 0x30,
+        0x41..=0x46 => hex[0] as u8 - 0x41 + 10,
+        0x61..=0x66 => hex[0] as u8 - 0x61 + 10,
+        _ => 0,
+    };
+    byte += match hex[1] {
+        0x30..=0x39 => hex[1] as u8 - 0x30,
+        0x41..=0x46 => hex[1] as u8 - 0x41 + 10,
+        0x61..=0x66 => hex[1] as u8 - 0x61 + 10,
+        _ => 0,
+    };
+
+    byte
 }
