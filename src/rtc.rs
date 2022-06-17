@@ -90,11 +90,8 @@ impl Datetime {
         
         let bcd_seconds = [seconds_byte >> 4, seconds_byte & 0b1111];
         let bcd_minutes = [minutes_byte >> 4, minutes_byte & 0b1111];
-        let military_time = (hours_byte & 0b10_0000) == 0b10_00000;
-        let bcd_hours = match military_time {
-            true  => [(hours_byte & 0b11_0000) >> 4, hours_byte & 0b1111],
-            false => [(hours_byte & 0b1_0000) >> 4, hours_byte & 0b1111],
-        };
+        let military_time = (hours_byte & 0b100_0000) == 0b100_00000;
+        let bcd_hours = [(hours_byte & 0b11_0000) >> 4, hours_byte & 0b1111];
         let bcd_date = [date_byte >> 4, date_byte & 0b1111];
         let bcd_month = [(month_byte & 0b1_0000) >> 4, month_byte & 0b1111];
         let century = ((month_byte & 0b1000_0000) >> 7) * 100;
@@ -103,7 +100,10 @@ impl Datetime {
         Datetime { 
             seconds: bcd_seconds[0] * 10 + bcd_seconds[1],
             minutes: bcd_minutes[0] * 10 + bcd_minutes[1],
-            hours: bcd_hours[0] * 10 + bcd_hours[1],
+            hours: match military_time {
+                true => bcd_hours[0] * 10 + bcd_hours[1],
+                false => 12*((bcd_hours[0] & 0b0010) >> 1) + (bcd_hours[0] & 0b0001) * 10 + bcd_hours[1],
+            },
             date: bcd_date[0] * 10 + bcd_date[1],
             month: bcd_month[0] * 10 + bcd_month[1],
             year: 1900 + century as u32 + bcd_year[0] as u32 * 10 + bcd_year[1] as u32,

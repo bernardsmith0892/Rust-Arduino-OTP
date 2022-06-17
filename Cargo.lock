@@ -21,6 +21,7 @@ name = "arduino-otp"
 version = "0.1.0"
 dependencies = [
  "arduino-hal",
+ "avr-progmem",
  "embedded-hal",
  "nb 0.1.3",
  "panic-halt",
@@ -73,6 +74,16 @@ dependencies = [
  "rustversion",
  "ufmt",
  "void",
+]
+
+[[package]]
+name = "avr-progmem"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d40dd576c3ebfdb9b2b0acd41787d2beb2dd77d1184077a13d8f6c79ab52aacf"
+dependencies = [
+ "cfg-if 1.0.0",
+ "ufmt",
 ]
 
 [[package]]
