@@ -1,9 +1,10 @@
-use arduino_hal::{hal::{port::{PD0, PD1}, Usart}, port::{Pin, mode::{Output, Input}}, clock::MHz16, pac::USART0};
-use crate::sha1;
+use arduino_hal::{hal::{port::{PD0, PD1}, Usart}, port::{Pin, mode::{Output, Input}}, clock::MHz16, pac::USART0, I2c};
+use crate::{sha1, rtc};
 
-const COMMANDS: [Command; 3] = [
+const COMMANDS: [Command; 5] = [
     Command {
-        name: *b"key",
+        name: *b"key  ",
+        name_length: 3,
         function: | context, param | {
             match param {
                 Some(new_key) => {
@@ -15,15 +16,15 @@ const COMMANDS: [Command; 3] = [
                 },
                 None => {
                     for byte in &context.key[0..context.key_length] {
-                        ufmt::uwrite!(context.serial, "{}", *byte as char);
+                        ufmt::uwrite!(context.serial, "{}", *byte as char).unwrap();
                     }
-                    ufmt::uwrite!(context.serial, "\n");
                 },
             }
         },
     },
     Command {
-        name: *b"dig",
+        name: *b"digit",
+        name_length: 5,
         function: | context, param | {
             match param {
                 Some(digit_param) => {
@@ -33,13 +34,14 @@ const COMMANDS: [Command; 3] = [
                     }
                 },
                 None => {
-                    ufmt::uwriteln!(context.serial, "{}", context.digits);
+                    ufmt::uwrite!(context.serial, "{}", context.digits).unwrap();
                 },
             }
         },
     },
     Command {
-        name: *b"otp",
+        name: *b"hotp ",
+        name_length: 4,
         function: | context, param | {
             if let Some(counter_param) = param {
                 let mut counter = 0;
@@ -50,16 +52,58 @@ const COMMANDS: [Command; 3] = [
                 let otp = sha1::gen_sha1_hotp(&context.key[0..context.key_length], counter, context.digits as u32).unwrap();
                 for i in 0..context.digits {
                     let digit = otp as u64 / 10_u64.pow((context.digits - i) as u32 - 1) % 10;
-                    ufmt::uwrite!(&mut context.serial, "{}", digit);
+                    ufmt::uwrite!(&mut context.serial, "{}", digit as u8).unwrap();
                 }
-                ufmt::uwrite!(&mut context.serial, "\n");
             }
         },
+    },
+    Command {
+        name: *b"totp ",
+        name_length: 4,
+        function: | context, _ | {
+            let timestamp = rtc::now(&mut context.i2c).unwrap().unix_timestamp();
+            let counter = timestamp / 30;
+
+            ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", timestamp).unwrap();
+            ufmt::uwriteln!(&mut context.serial, "Counter: {}", counter).unwrap();
+            let otp = sha1::gen_sha1_hotp(&context.key[0..context.key_length], counter, context.digits as u32).unwrap();
+            for i in 0..context.digits {
+                let digit = otp as u64 / 10_u64.pow((context.digits - i) as u32 - 1) % 10;
+                ufmt::uwrite!(&mut context.serial, "{}", digit as u8).unwrap();
+            }
+        },
+    },
+    Command {
+        name: *b"time ",
+        name_length: 4,
+        function: | context, param | {
+            if let Some(timestamp_param) = param {
+                let mut timestamp = 0;
+                for (i, byte) in timestamp_param.iter().enumerate() {
+                    timestamp += (*byte as u64 - 0x30) * 10_u64.pow(timestamp_param.len() as u32 - i as u32 - 1);
+                    //ufmt::uwriteln!(&mut context.serial, "{}", timestamp).unwrap();
+                }
+
+                let new_date = rtc::Datetime::from_timestamp(timestamp);
+                ufmt::uwriteln!(&mut context.serial, "{:?}", new_date).unwrap();
+                let date_bytes = new_date.to_bytes();
+                ufmt::uwriteln!(&mut context.serial, "{:?}", date_bytes).unwrap();
+                rtc::set(&mut context.i2c, date_bytes).unwrap();
+            }
+
+            let stored_date = rtc::now(&mut context.i2c).unwrap();
+            ufmt::uwriteln!(&mut context.serial, "Date: {}/{}/{} - {}:{}:{}", 
+                stored_date.year, stored_date.month, stored_date.date, 
+                stored_date.hours, stored_date.minutes, stored_date.seconds)
+            .unwrap();
+            ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
+        }
     }
 ];
 
 pub struct TTY {
     serial: Usart<USART0, Pin<Input, PD0>, Pin<Output, PD1>, MHz16>,
+    i2c: I2c,
     buffer: [u8; 128],
     key: [u8; 256],
     key_length: usize,
@@ -68,9 +112,10 @@ pub struct TTY {
 }
 
 impl TTY {
-    pub fn new(serial: Usart<USART0, Pin<Input, PD0>, Pin<Output, PD1>, MHz16>) -> Self {
+    pub fn new(serial: Usart<USART0, Pin<Input, PD0>, Pin<Output, PD1>, MHz16>, i2c: I2c) -> Self {
         Self {
             serial: serial,
+            i2c: i2c,
             buffer: [0; 128],
             key: [0; 256],
             key_length: 0,
@@ -125,7 +170,8 @@ impl TTY {
 
         for command in COMMANDS {
             if let Some(input_name) = name {
-                if input_name == command.name {
+                if input_name.len() == command.name_length && 
+                   input_name == &command.name[0..command.name_length] {
                     (command.function)(self, param);
                 }
             }
@@ -135,6 +181,7 @@ impl TTY {
 }
 
 struct Command {
-    name: [u8; 3],
+    name: [u8; 5],
+    name_length: usize,
     function: fn(&mut TTY, Option<&[u8]>),
 }
