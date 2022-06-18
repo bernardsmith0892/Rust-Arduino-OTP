@@ -1,5 +1,4 @@
 use arduino_hal::{hal::{port::{PD0, PD1}, Usart}, port::{Pin, mode::{Output, Input}}, clock::MHz16, pac::USART0, I2c};
-use avr_progmem;
 
 pub struct TTY {
     serial: Usart<USART0, Pin<Input, PD0>, Pin<Output, PD1>, MHz16>,
@@ -85,6 +84,7 @@ impl TTY {
 
 mod tty_commands {
     use crate::{sha1, rtc, byte_helper};
+    use avr_progmem::progmem_display as D;
 
     use super::TTY;
 
@@ -242,8 +242,8 @@ mod tty_commands {
         Ok(())
     }
     fn help_screen(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
-        ufmt::uwriteln!(&mut context.serial, 
-           "key <OTP Key> - Set OTP key. \n\
+        ufmt::uwriteln!(&mut context.serial, "{}",
+            D!("key <OTP Key> - Set OTP key. \n\
             key - Show current OTP key. \n\
             digit <OTP Digits> - Set digits of OTP. (default is 6) \n\
             digit - Show OTP digits setting. \n\
@@ -253,7 +253,7 @@ mod tty_commands {
             time - Show current date and time. \n\
             read <xxxx> - Read RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
             write <xxxx> <xx> - Read RTC EEPROM at the given 2-byte address. Must provide four and two hex digits. \n\
-            help - Show this help menu."
+            help - Show this help menu.")
             ).unwrap();
         Ok(())
     }

@@ -20,21 +20,7 @@ pub fn u16_to_bytes(word: u16) -> [u8; 2] {
     ]
 }
 
-pub fn u24_to_bytes(word: u32) -> [u8; 3] {
-    // (0..4).rev()
-        // .map(|i| ((word >> 8*i) & 0xff) as u8)
-        // .collect()
-    [
-        ((word >> 8*2) & 0xff) as u8,
-        ((word >> 8*1) & 0xff) as u8,
-        ((word >> 8*0) & 0xff) as u8,
-    ]
-}
-
 pub fn u32_to_bytes(word: u32) -> [u8; 4] {
-    // (0..4).rev()
-        // .map(|i| ((word >> 8*i) & 0xff) as u8)
-        // .collect()
     [
         ((word >> 8*3) & 0xff) as u8,
         ((word >> 8*2) & 0xff) as u8,
@@ -44,9 +30,6 @@ pub fn u32_to_bytes(word: u32) -> [u8; 4] {
 }
 
 pub fn u64_to_bytes(word: u64) -> [u8; 8] {
-    // (0..8).rev()
-        // .map(|i| ((word >> 8*i) & 0xff) as u8)
-        // .collect()
     [
         ((word >> 8*7) & 0xff) as u8,
         ((word >> 8*6) & 0xff) as u8,
