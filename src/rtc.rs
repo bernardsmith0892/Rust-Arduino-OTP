@@ -204,6 +204,12 @@ pub fn write_byte_eeprom(i2c: &mut I2c, address: [u8; 2], input: u8) -> Result<(
 
 pub fn write_page_eeprom(i2c: &mut I2c, address: [u8; 2], input: [u8; 32]) -> Result<(), arduino_hal::i2c::Error> {
     let mut buffer = [0_u8; 34];
+
+    // Address must be at the start of a 32-byte page boundary
+    if address[1] % 32 != 0 {
+        return Err(arduino_hal::i2c::Error::Unknown);
+    }
+
     buffer[0..2].copy_from_slice(&address);
     buffer[2..34].copy_from_slice(&input);
 
@@ -227,7 +233,7 @@ pub fn read_key_eeprom(i2c: &mut I2c) -> Result<(usize, [u8; 256]), arduino_hal:
 pub fn write_key_eeprom(i2c: &mut I2c, length: usize, key: [u8; 256]) -> Result<(), arduino_hal::i2c::Error> {
     // Write key length to 0x00_00
     write_byte_eeprom(i2c, byte_helper::u16_to_bytes(0x00_00), length as u8)?;
-    arduino_hal::delay_ms(10);
+    arduino_hal::delay_ms(10); // Wait for EEPROM to finish writing
 
     // Write key in 32-byte pages from 0x00_20 to 0x01_20
     for (address, key_page) in (0x00_20..0x01_20 as u16).step_by(32).zip(key.chunks(32)) {
@@ -237,7 +243,7 @@ pub fn write_key_eeprom(i2c: &mut I2c, length: usize, key: [u8; 256]) -> Result<
         page.copy_from_slice(key_page);
 
         write_page_eeprom(i2c, address_bytes, page)?;
-        arduino_hal::delay_ms(50);
+        arduino_hal::delay_ms(10); // Wait for EEPROM to finish writing
     }
 
     Ok(())
