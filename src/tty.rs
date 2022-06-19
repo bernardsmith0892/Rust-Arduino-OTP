@@ -115,12 +115,14 @@ mod tty_commands {
         };
     }
 
-    pub const COMMANDS: [Command; 11] = [
+    pub const COMMANDS: [Command; 13] = [
         command!(b"key  ", 3, key),
         command!(b"digit", 5, digit),
         command!(b"hotp ", 4, hotp),
         command!(b"totp ", 4, totp),
         command!(b"time ", 4, time_i2c),
+        command!(b"temp ", 4, read_temperature),
+        command!(b"utemp", 5, update_temperature),
         command!(b"read ", 4, read_i2c),
         command!(b"readp", 5, read_page_i2c),
         command!(b"write", 5, write_i2c),
@@ -309,6 +311,33 @@ mod tty_commands {
         }
     }
 
+    // Read the current temperature from the RTC 
+    pub fn read_temperature(context: &mut TTY, _: Option<&[u8]>) {
+        match rtc::read_temperature(&mut context.i2c) {
+            Ok((temp, quarter_temp)) => {
+                ufmt::uwriteln!(&mut context.serial, "Current Temperature: {}.{} (C)", temp, quarter_temp*25).unwrap();
+            },
+            Err(e) => {
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error reading temperature from RTC - "), e).unwrap();
+            },
+        }
+    }
+
+    // Read the current temperature from the RTC 
+    pub fn update_temperature(context: &mut TTY, _: Option<&[u8]>) {
+        match rtc::update_temperature(&mut context.i2c) {
+            Ok(true) => {
+                ufmt::uwriteln!(&mut context.serial, "{}", D!("Requested temperature update...")).unwrap();
+            },
+            Ok(false) => {
+                ufmt::uwriteln!(&mut context.serial, "{}", D!("Temperature update already in-progress!")).unwrap();
+            },
+            Err(e) => {
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error sending command to RTC - "), e).unwrap();
+            },
+        }
+    }
+
     fn help_screen(context: &mut TTY, _: Option<&[u8]>) {
         ufmt::uwriteln!(&mut context.serial, "{}",
             D!("key <OTP Key> - Set OTP key. \n\
@@ -319,6 +348,8 @@ mod tty_commands {
             totp - Calculate OTP for the current time. (step of 30) \n\
             time <UNIX timestamp> - Set date and time. \n\
             time - Show current date and time. \n\
+            temp - Show current temperature in Celsius. \n\
+            utemp - Force the RTC to update its temperature reading. \n\
             read <addr> - Read a byte from RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
             readp <addr> - Read a 32-byte page from the RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
             write <addr> <data> - Write a byte to the RTC EEPROM at the given 2-byte address. Must provide four and two hex digits. \n\

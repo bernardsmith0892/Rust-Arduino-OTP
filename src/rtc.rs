@@ -178,6 +178,35 @@ pub fn set(i2c: &mut I2c, new_time: [u8; 8]) -> Result<(), arduino_hal::i2c::Err
     i2c.write(DS3231_I2C_ADDRESS, &new_time)
 }
 
+// Read the current temperature value in Celsius 
+// Return: (whole numbers, 0.25 resolution value)
+pub fn read_temperature(i2c: &mut I2c) -> Result<(i8, u8), arduino_hal::i2c::Error> {
+    let mut buffer = [0_u8; 2];
+    i2c.write_read(DS3231_I2C_ADDRESS, &[0x11], &mut buffer)?;
+
+    buffer[1] = (buffer[1] >> 6) & 0b11;
+
+    Ok((buffer[0] as i8, buffer[1]))
+}
+
+// Force a temperature update in the RTC
+// Return: true if we forced an update, false if an update is already in progress
+pub fn update_temperature(i2c: &mut I2c) -> Result<bool, arduino_hal::i2c::Error> {
+    let mut current_settings = [0_u8; 2];
+    i2c.write_read(DS3231_I2C_ADDRESS, &[0x0e], &mut current_settings)?;
+
+    // Don't update if the busy flag is set
+    if (current_settings[1] & 0b0100) != 0b0100 {
+        let new_control_settings = current_settings[0] | 0b0010_0000;
+        i2c.write(DS3231_I2C_ADDRESS, &[0x0e, new_control_settings])?;
+
+        Ok(true)
+    }
+    else {
+        Ok(false)
+    }
+}
+
 // Read a single byte from the RTC EEPROM
 pub fn read_byte_eeprom(i2c: &mut I2c, address: [u8; 2]) -> Result<[u8; 1], arduino_hal::i2c::Error> {
     let mut buffer = [0_u8; 1];
