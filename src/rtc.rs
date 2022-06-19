@@ -2,6 +2,8 @@ use arduino_hal::I2c;
 use embedded_hal::prelude::{_embedded_hal_blocking_i2c_WriteRead, _embedded_hal_blocking_i2c_Write};
 use ufmt::derive::uDebug;
 
+use crate::byte_helper;
+
 const DS3231_I2C_ADDRESS: u8 = 0x68;
 const EEPROM_I2C_ADDRESS: u8 = 0x57;
 
@@ -102,7 +104,13 @@ impl Datetime {
             minutes: bcd_minutes[0] * 10 + bcd_minutes[1],
             hours: match military_time {
                 true => bcd_hours[0] * 10 + bcd_hours[1],
-                false => 12*((bcd_hours[0] & 0b0010) >> 1) + (bcd_hours[0] & 0b0001) * 10 + bcd_hours[1],
+                false => {
+                    let pm = (bcd_hours[0] & 0b0010) == 0b0010;
+                    match pm {
+                        true => 12 + (bcd_hours[0] & 0b0001) * 10 + bcd_hours[1],
+                        false => ((bcd_hours[0] & 0b0001) * 10 + bcd_hours[1]) % 12,
+                    }
+                },
             },
             date: bcd_date[0] * 10 + bcd_date[1],
             month: bcd_month[0] * 10 + bcd_month[1],
@@ -111,19 +119,17 @@ impl Datetime {
     }
 
     pub fn to_bytes(self) -> [u8; 8] {
-        let mut bytes = [0_u8; 8];
-
-        bytes[0] = 0x00; // Destination register on the DS3231
-        bytes[1] = (((self.seconds / 10) << 4) & 0b0111_0000) | ((self.seconds % 10) & 0b1111);
-        bytes[2] = (((self.minutes / 10) << 4) & 0b0111_0000) | ((self.minutes % 10) & 0b1111);
-        bytes[3] = 0b0100_0000 | (((self.hours / 10) << 4) & 0b0011_0000) | ((self.hours % 10) & 0b1111); // Set to military time
-        bytes[4] = 0b0000_0001; // Don't care - set to start of the week
-        bytes[5] = (((self.date / 10) << 4) & 0b0011_0000) | ((self.date % 10) & 0b1111);
-        // Set the century marker if the year is in the 2001's
-        bytes[6] = if self.year >= 2000 {0b1000_0000} else {0b0000_0000} | (((self.month / 10) << 4) & 0b0001_0000) | ((self.month % 10) & 0b1111);
-        bytes[7] = (((((self.year % 100) / 10) << 4) & 0b1111_0000) | ((self.year % 10) & 0b1111)) as u8;
-
-        bytes
+        [
+        0x00, // Destination register on the DS3231
+        (((self.seconds / 10) << 4) & 0b0111_0000) | ((self.seconds % 10) & 0b1111),
+        (((self.minutes / 10) << 4) & 0b0111_0000) | ((self.minutes % 10) & 0b1111),
+        0b0100_0000 | (((self.hours / 10) << 4) & 0b0011_0000) | ((self.hours % 10) & 0b1111), // Set to military time
+        0b0000_0001, // Don't care - set to start of the week
+        (((self.date / 10) << 4) & 0b0011_0000) | ((self.date % 10) & 0b1111),
+        //Set the century marker if the year is in the 2001's
+        if self.year >= 2000 {0b1000_0000} else {0b0000_0000} | (((self.month / 10) << 4) & 0b0001_0000) | ((self.month % 10) & 0b1111),
+        (((((self.year % 100) / 10) << 4) & 0b1111_0000) | ((self.year % 10) & 0b1111)) as u8,
+        ]
     }
 
 }
@@ -142,14 +148,11 @@ fn days_since_epoch(year: u32) -> u32 {
 
 fn days_this_year(year: u32, month: u8, day: u8) -> u32 {
     let mut days: u32 = 0;
-
     for m in 1..month {
         days += days_this_month(m, year) as u32;
     }
 
-    days += day as u32;
-
-    days
+    days + day as u32
 }
 
 fn seconds_this_day(hours: u8, minutes: u8, seconds: u8) -> u32 {
@@ -172,20 +175,70 @@ pub fn now(i2c: &mut I2c) -> Result<Datetime, arduino_hal::i2c::Error> {
 
 
 pub fn set(i2c: &mut I2c, new_time: [u8; 8]) -> Result<(), arduino_hal::i2c::Error> {
-    i2c.write(DS3231_I2C_ADDRESS, &new_time)?;
-
-    Ok(())
+    i2c.write(DS3231_I2C_ADDRESS, &new_time)
 }
 
-pub fn read(i2c: &mut I2c, address: [u8; 2]) -> Result<[u8; 1], arduino_hal::i2c::Error> {
+// Read a single byte from the RTC EEPROM
+pub fn read_byte_eeprom(i2c: &mut I2c, address: [u8; 2]) -> Result<[u8; 1], arduino_hal::i2c::Error> {
     let mut buffer = [0_u8; 1];
     i2c.write_read(EEPROM_I2C_ADDRESS, &address, &mut buffer)?;
 
     Ok(buffer)
 }
 
-pub fn write(i2c: &mut I2c, input: [u8; 3]) -> Result<(), arduino_hal::i2c::Error> {
-    i2c.write(EEPROM_I2C_ADDRESS, &input)?;
+// Read a 32-byte page from the RTC EEPROM
+pub fn read_page_eeprom(i2c: &mut I2c, address: [u8; 2]) -> Result<[u8; 32], arduino_hal::i2c::Error> {
+    let mut buffer = [0_u8; 32];
+    i2c.write_read(EEPROM_I2C_ADDRESS, &address, &mut buffer)?;
+
+    Ok(buffer)
+}
+
+pub fn write_byte_eeprom(i2c: &mut I2c, address: [u8; 2], input: u8) -> Result<(), arduino_hal::i2c::Error> {
+    let buffer = [
+        address[0], address[1],
+        input
+    ];
+    i2c.write(EEPROM_I2C_ADDRESS, &buffer)
+}
+
+pub fn write_page_eeprom(i2c: &mut I2c, address: [u8; 2], input: [u8; 32]) -> Result<(), arduino_hal::i2c::Error> {
+    let mut buffer = [0_u8; 34];
+    buffer[0..2].copy_from_slice(&address);
+    buffer[2..34].copy_from_slice(&input);
+
+    i2c.write(EEPROM_I2C_ADDRESS, &buffer)
+}
+
+// Key is stored starting at address 0x0000 of the RTC EEPROM
+// 0x00_00 => length: u8
+// 0x00_20..0x01_20 => key_byte: u8
+//   (start key at 0x00_20 to ensure we only write within 32-byte page boundaries)
+pub fn read_key_eeprom(i2c: &mut I2c) -> Result<(usize, [u8; 256]), arduino_hal::i2c::Error> {
+    let mut length = [0_u8; 1];
+    i2c.write_read(EEPROM_I2C_ADDRESS, &[0x00, 0x00], &mut length)?;
+
+    let mut key = [0_u8; 256];
+    i2c.write_read(EEPROM_I2C_ADDRESS, &[0x00, 0x20], &mut key)?;
+
+    Ok((length[0] as usize, key))
+}
+
+pub fn write_key_eeprom(i2c: &mut I2c, length: usize, key: [u8; 256]) -> Result<(), arduino_hal::i2c::Error> {
+    // Write key length to 0x00_00
+    write_byte_eeprom(i2c, byte_helper::u16_to_bytes(0x00_00), length as u8)?;
+    arduino_hal::delay_ms(10);
+
+    // Write key in 32-byte pages from 0x00_20 to 0x01_20
+    for (address, key_page) in (0x00_20..0x01_20 as u16).step_by(32).zip(key.chunks(32)) {
+        let address_bytes = byte_helper::u16_to_bytes(address);
+
+        let mut page = [0u8; 32];
+        page.copy_from_slice(key_page);
+
+        write_page_eeprom(i2c, address_bytes, page)?;
+        arduino_hal::delay_ms(50);
+    }
 
     Ok(())
 }

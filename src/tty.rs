@@ -12,7 +12,7 @@ pub struct TTY {
 
 impl TTY {
     pub fn new(serial: Usart<USART0, Pin<Input, PD0>, Pin<Output, PD1>, MHz16>, i2c: I2c) -> Self {
-        Self {
+        let mut new_tty = Self {
             serial: serial,
             i2c: i2c,
             buffer: [0; 128],
@@ -20,7 +20,14 @@ impl TTY {
             key_length: 0,
             cursor_position: 0,
             digits: 6,
-        }
+        };
+
+        // Attempt to load a saved key from the RTC EEPROM
+        tty_commands::read_key(&mut new_tty, None);
+        
+        new_tty.newline();
+
+        new_tty
     }
 
     fn newline(&mut self) {
@@ -105,7 +112,7 @@ mod tty_commands {
         };
     }
 
-    pub const COMMANDS: [Command; 8] = [
+    pub const COMMANDS: [Command; 10] = [
         command!(b"key  ", 3, key),
         command!(b"digit", 5, digit),
         command!(b"hotp ", 4, hotp),
@@ -113,6 +120,8 @@ mod tty_commands {
         command!(b"time ", 4, time_i2c),
         command!(b"read ", 4, read_i2c),
         command!(b"write", 5, write_i2c),
+        command!(b"load ", 4, read_key),
+        command!(b"save ", 4, write_key),
         command!(b"help ", 4, help_screen),
     ];
 
@@ -186,23 +195,27 @@ mod tty_commands {
             let mut timestamp = 0;
             for (i, byte) in timestamp_param.iter().enumerate() {
                 timestamp += (*byte as u64 - 0x30) * 10_u64.pow(timestamp_param.len() as u32 - i as u32 - 1);
-                //ufmt::uwriteln!(&mut context.serial, "{}", timestamp).unwrap();
             }
 
             let new_date = rtc::Datetime::from_timestamp(timestamp);
-            //ufmt::uwriteln!(&mut context.serial, "{:?}", new_date).unwrap();
             let date_bytes = new_date.to_bytes();
-            //ufmt::uwriteln!(&mut context.serial, "{:?}", date_bytes).unwrap();
             rtc::set(&mut context.i2c, date_bytes).unwrap();
         }
 
-        let stored_date = rtc::now(&mut context.i2c).unwrap();
-        ufmt::uwriteln!(&mut context.serial, "Date: {}/{}/{} - {}:{}:{}", 
-            stored_date.year, stored_date.month, stored_date.date, 
-            stored_date.hours, stored_date.minutes, stored_date.seconds)
-        .unwrap();
-        ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
-        Ok(())
+        match rtc::now(&mut context.i2c) {
+            Ok(stored_date) => {
+                ufmt::uwriteln!(&mut context.serial, "Date: {}/{}/{} - {}:{}:{}", 
+                    stored_date.year, stored_date.month, stored_date.date, 
+                    stored_date.hours, stored_date.minutes, stored_date.seconds)
+                .unwrap();
+                ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
+                Ok(())
+            }
+            Err(e) => {
+                ufmt::uwriteln!(&mut context.serial, "Error reading time from RTC - {:?}", e).unwrap();
+                Err(())
+            }
+        }
     }
 
     fn read_i2c(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
@@ -212,10 +225,19 @@ mod tty_commands {
                 for i in (0..address_bytes.len()).step_by(2) {
                     address[i/2] = byte_helper::hex_to_byte([address_bytes[i], address_bytes[i+1]]);
                 }
-                let stored_byte = rtc::read(&mut context.i2c, address).unwrap();
-                ufmt::uwriteln!(&mut context.serial, "Bytes: {:?}", stored_byte).unwrap();
+                match rtc::read_byte_eeprom(&mut context.i2c, address) {
+                    Ok(byte) => {
+                        ufmt::uwriteln!(&mut context.serial, "Byte: {}", byte[0]).unwrap();
+                        return Ok(());
+                    },
+                    Err(e) => {
+                        ufmt::uwriteln!(&mut context.serial, "Error reading RTC EEPROM: {:?}", e).unwrap();
+                        return Err(());
+                    },
+                }
             }
         }
+
         Ok(())
     }
     fn write_i2c(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
@@ -228,19 +250,49 @@ mod tty_commands {
                 let address_bytes = address_bytes.unwrap(); 
                 let data_bytes = data_bytes.unwrap(); 
                 if address_bytes.len() == 4 && data_bytes.len() == 2 {
-                    let input = [
+                    let address = [
                         byte_helper::hex_to_byte([address_bytes[0], address_bytes[1]]),
                         byte_helper::hex_to_byte([address_bytes[2], address_bytes[3]]),
-                        byte_helper::hex_to_byte([data_bytes[0], data_bytes[1]]),
                     ];
+                    let input = byte_helper::hex_to_byte([data_bytes[0], data_bytes[1]]);
 
-                    let write_result = rtc::write(&mut context.i2c, input);
+                    let write_result = rtc::write_byte_eeprom(&mut context.i2c, address, input);
                     ufmt::uwriteln!(&mut context.serial, "{:?}", write_result).unwrap();
                 }
             }
         }
         Ok(())
     }
+
+    // Write the currently saved key to EEPROM
+    fn write_key(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+        match rtc::write_key_eeprom(&mut context.i2c, context.key_length, context.key) {
+            Ok(_) => {
+                ufmt::uwriteln!(&mut context.serial, "Saved key to RTC EEPROM").unwrap();
+                Ok(())
+            },
+            Err(e) => {
+                ufmt::uwriteln!(&mut context.serial, "Error writing key to RTC EEPROM - {:?}", e).unwrap();
+                Err(())
+            },
+        }
+    }
+    // Read the currently saved key from EEPROM
+    pub fn read_key(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+        match rtc::read_key_eeprom(&mut context.i2c) {
+            Ok((length, key)) => {
+                context.key_length = length;
+                context.key = key;
+                ufmt::uwriteln!(&mut context.serial, "Loaded key of length {} from RTC EEPROM", length).unwrap();
+                Ok(())
+            },
+            Err(e) => {
+                ufmt::uwriteln!(&mut context.serial, "Error loading previous key from EEPROM - {:?}", e).unwrap();
+                Err(())
+            },
+        }
+    }
+
     fn help_screen(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
         ufmt::uwriteln!(&mut context.serial, "{}",
             D!("key <OTP Key> - Set OTP key. \n\
@@ -253,6 +305,8 @@ mod tty_commands {
             time - Show current date and time. \n\
             read <xxxx> - Read RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
             write <xxxx> <xx> - Read RTC EEPROM at the given 2-byte address. Must provide four and two hex digits. \n\
+            save - Save the current key into RTC EEPROM. \n\
+            load - Load the saved key from RTC EEPROM. \n\
             help - Show this help menu.")
             ).unwrap();
         Ok(())
