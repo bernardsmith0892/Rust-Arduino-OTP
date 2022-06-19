@@ -78,10 +78,7 @@ impl TTY {
             if let Some(input_name) = name {
                 if input_name.len() == command.name_length && 
                    input_name == &command.name[0..command.name_length] {
-                    match (command.function)(self, params) {
-                        Ok(_) => (),
-                        Err(_) => ufmt::uwriteln!(&mut self.serial, "\nError!").unwrap(),
-                    }
+                    (command.function)(self, params);
                 }
             }
         }
@@ -98,7 +95,7 @@ mod tty_commands {
     pub struct Command {
         pub name: [u8; 5],
         pub name_length: usize,
-        pub function: fn(&mut TTY, Option<&[u8]>) -> Result<(), ()>,
+        pub function: fn(&mut TTY, Option<&[u8]>),
     }
 
     #[macro_export]
@@ -126,7 +123,7 @@ mod tty_commands {
     ];
 
     // Functions
-    fn key(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn key(context: &mut TTY, param: Option<&[u8]>) {
         match param {
             Some(new_key) => {
                 context.key = [0; 256];
@@ -141,11 +138,9 @@ mod tty_commands {
                 }
             },
         }
-
-        Ok(())
     }
 
-    fn digit(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn digit(context: &mut TTY, param: Option<&[u8]>) {
         match param {
             Some(digit_param) => {
                 context.digits = 0;
@@ -157,11 +152,9 @@ mod tty_commands {
                 ufmt::uwrite!(context.serial, "{}", context.digits).unwrap();
             },
         }
-
-        Ok(())
     }
 
-    fn hotp(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn hotp(context: &mut TTY, param: Option<&[u8]>) {
         if let Some(counter_param) = param {
             let mut counter = 0;
             for (i, byte) in counter_param.iter().enumerate() {
@@ -174,9 +167,8 @@ mod tty_commands {
                 ufmt::uwrite!(&mut context.serial, "{}", digit as u8).unwrap();
             }
         }
-        Ok(())
     }
-    fn totp(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+    fn totp(context: &mut TTY, _: Option<&[u8]>) {
         let timestamp = rtc::now(&mut context.i2c).unwrap().unix_timestamp();
         let counter = timestamp / 30;
 
@@ -187,10 +179,9 @@ mod tty_commands {
             let digit = otp as u64 / 10_u64.pow((context.digits - i) as u32 - 1) % 10;
             ufmt::uwrite!(&mut context.serial, "{}", digit as u8).unwrap();
         }
-        Ok(())
     }
 
-    fn time_i2c(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn time_i2c(context: &mut TTY, param: Option<&[u8]>) {
         if let Some(timestamp_param) = param {
             let mut timestamp = 0;
             for (i, byte) in timestamp_param.iter().enumerate() {
@@ -209,16 +200,14 @@ mod tty_commands {
                     stored_date.hours, stored_date.minutes, stored_date.seconds)
                 .unwrap();
                 ufmt::uwriteln!(&mut context.serial, "Timestamp: {}", stored_date.unix_timestamp()).unwrap();
-                Ok(())
             }
             Err(e) => {
                 ufmt::uwriteln!(&mut context.serial, "Error reading time from RTC - {:?}", e).unwrap();
-                Err(())
             }
         }
     }
 
-    fn read_i2c(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn read_i2c(context: &mut TTY, param: Option<&[u8]>) {
         if let Some(address_bytes) = param {
             if address_bytes.len() == 4 {
                 let mut address = [0_u8; 2];
@@ -228,19 +217,15 @@ mod tty_commands {
                 match rtc::read_byte_eeprom(&mut context.i2c, address) {
                     Ok(byte) => {
                         ufmt::uwriteln!(&mut context.serial, "Byte: {}", byte[0]).unwrap();
-                        return Ok(());
                     },
                     Err(e) => {
                         ufmt::uwriteln!(&mut context.serial, "Error reading RTC EEPROM: {:?}", e).unwrap();
-                        return Err(());
                     },
                 }
             }
         }
-
-        Ok(())
     }
-    fn write_i2c(context: &mut TTY, param: Option<&[u8]>) -> Result<(), ()> {
+    fn write_i2c(context: &mut TTY, param: Option<&[u8]>) {
         if let Some(input_bytes) = param {
             let mut args = input_bytes.split(|byte| byte == &b' ');
             let address_bytes = args.next();
@@ -261,39 +246,34 @@ mod tty_commands {
                 }
             }
         }
-        Ok(())
     }
 
     // Write the currently saved key to EEPROM
-    fn write_key(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+    fn write_key(context: &mut TTY, _: Option<&[u8]>) {
         match rtc::write_key_eeprom(&mut context.i2c, context.key_length, context.key) {
             Ok(_) => {
                 ufmt::uwriteln!(&mut context.serial, "Saved key to RTC EEPROM").unwrap();
-                Ok(())
             },
             Err(e) => {
                 ufmt::uwriteln!(&mut context.serial, "Error writing key to RTC EEPROM - {:?}", e).unwrap();
-                Err(())
             },
         }
     }
     // Read the currently saved key from EEPROM
-    pub fn read_key(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+    pub fn read_key(context: &mut TTY, _: Option<&[u8]>) {
         match rtc::read_key_eeprom(&mut context.i2c) {
             Ok((length, key)) => {
                 context.key_length = length;
                 context.key = key;
                 ufmt::uwriteln!(&mut context.serial, "Loaded key of length {} from RTC EEPROM", length).unwrap();
-                Ok(())
             },
             Err(e) => {
                 ufmt::uwriteln!(&mut context.serial, "Error loading previous key from EEPROM - {:?}", e).unwrap();
-                Err(())
             },
         }
     }
 
-    fn help_screen(context: &mut TTY, _: Option<&[u8]>) -> Result<(), ()> {
+    fn help_screen(context: &mut TTY, _: Option<&[u8]>) {
         ufmt::uwriteln!(&mut context.serial, "{}",
             D!("key <OTP Key> - Set OTP key. \n\
             key - Show current OTP key. \n\
@@ -309,6 +289,5 @@ mod tty_commands {
             load - Load the saved key from RTC EEPROM. \n\
             help - Show this help menu.")
             ).unwrap();
-        Ok(())
     }
 }
