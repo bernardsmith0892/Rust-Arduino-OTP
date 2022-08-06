@@ -1,0 +1,43 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cargo: build debug using WSL",
+            "type": "shell",
+            "command": "wsl /home/kali/.cargo/bin/cargo build",
+            "group": "build",
+        },
+        {
+            "label": "cargo: build release using WSL",
+            "type": "shell",
+            "command": "wsl /home/kali/.cargo/bin/cargo build --release",
+            "group": "build",
+        },
+        {
+            "label": "arduino: upload debug program",
+            "type": "shell",
+            "command": "& 'C:/Program Files (x86)/Arduino/hardware/tools/avr/bin/avrdude.exe' '-CC:/Program Files (x86)/Arduino/hardware/tools/avr/etc/avrdude.conf' -patmega328p -v -carduino -PCOM5 -b115200 -D '-Uflash:w:C:/Users/berna/Documents/Technical Documents/Programming/Rust/arduino-otp/target/avr-atmega328p/debug/arduino-otp.elf:e'",
+            "group": "build",
+        },
+        {
+            "label": "arduino: upload release program",
+            "type": "shell",
+            "command": "& 'C:/Program Files (x86)/Arduino/hardware/tools/avr/bin/avrdude.exe' '-CC:/Program Files (x86)/Arduino/hardware/tools/avr/etc/avrdude.conf' -patmega328p -v -carduino -PCOM5 -b115200 -D '-Uflash:w:C:/Users/berna/Documents/Technical Documents/Programming/Rust/arduino-otp/target/avr-atmega328p/release/arduino-otp.elf:e'",
+            "group": "build",
+        },
+        {
+            "label": "arduino: build and upload debug program",
+            "dependsOn": ["cargo: build debug using WSL", "arduino: upload debug program"],
+            "dependsOrder": "sequence",
+            "group": "build",
+        },
+        {
+            "label": "arduino: build and upload release program",
+            "dependsOn": ["cargo: build release using WSL", "arduino: upload release program"],
+            "dependsOrder": "sequence",
+            "group": "build",
+        },
+    ]
+}

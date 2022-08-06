@@ -88,7 +88,7 @@ impl TTY {
 
 mod tty_commands {
     use crate::{sha1, rtc, byte_helper};
-    use avr_progmem::{progmem_display as D, progmem};
+    use avr_progmem::{progmem_display as D, progmem_str as F, progmem};
 
     use super::TTY;
 
@@ -158,7 +158,7 @@ mod tty_commands {
                 }
             },
             None => {
-                ufmt::uwrite!(context.serial, "{}", context.digits).unwrap();
+                ufmt::uwriteln!(context.serial, "{}", context.digits).unwrap();
             },
         }
     }
@@ -207,7 +207,7 @@ mod tty_commands {
             let new_date = rtc::Datetime::from_timestamp(timestamp);
             let date_bytes = new_date.to_bytes();
             if let Err(e) = rtc::set(&mut context.i2c, date_bytes) {
-                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error setting time for RTC - "), e).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", F!("Error setting time for RTC - "), e).unwrap();
                 return;
             }
         }
@@ -290,7 +290,7 @@ mod tty_commands {
     fn write_key(context: &mut TTY, _: Option<&[u8]>) {
         match rtc::write_key_eeprom(&mut context.i2c, context.key_length, context.key) {
             Ok(_) => {
-                ufmt::uwriteln!(&mut context.serial, "{}", D!("Saved key to RTC EEPROM")).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}", F!("Saved key to RTC EEPROM")).unwrap();
             },
             Err(e) => {
                 ufmt::uwriteln!(&mut context.serial, "{}{:?}", ERROR_EEPROM_WRITE, e).unwrap();
@@ -303,10 +303,10 @@ mod tty_commands {
             Ok((length, key)) => {
                 context.key_length = length;
                 context.key = key;
-                ufmt::uwriteln!(&mut context.serial, "{}{}{}", D!("Loaded key of length "), length, D!(" from RTC EEPROM")).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}{}{}", F!("Loaded key of length "), length, F!(" from RTC EEPROM")).unwrap();
             },
             Err(e) => {
-                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error loading previous key from EEPROM - "), e).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", F!("Error loading previous key from EEPROM - "), e).unwrap();
             },
         }
     }
@@ -315,10 +315,10 @@ mod tty_commands {
     pub fn read_temperature(context: &mut TTY, _: Option<&[u8]>) {
         match rtc::read_temperature(&mut context.i2c) {
             Ok((temp, quarter_temp)) => {
-                ufmt::uwriteln!(&mut context.serial, "Current Temperature: {}.{} (C)", temp, quarter_temp*25).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "Current Temperature: {}.{} °C", temp, quarter_temp*25).unwrap();
             },
             Err(e) => {
-                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error reading temperature from RTC - "), e).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", F!("Error reading temperature from RTC - "), e).unwrap();
             },
         }
     }
@@ -327,34 +327,34 @@ mod tty_commands {
     pub fn update_temperature(context: &mut TTY, _: Option<&[u8]>) {
         match rtc::update_temperature(&mut context.i2c) {
             Ok(true) => {
-                ufmt::uwriteln!(&mut context.serial, "{}", D!("Requested temperature update...")).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}", F!("Requested temperature update...")).unwrap();
             },
             Ok(false) => {
-                ufmt::uwriteln!(&mut context.serial, "{}", D!("Temperature update already in-progress!")).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}", F!("Temperature update already in-progress!")).unwrap();
             },
             Err(e) => {
-                ufmt::uwriteln!(&mut context.serial, "{}{:?}", D!("Error sending command to RTC - "), e).unwrap();
+                ufmt::uwriteln!(&mut context.serial, "{}{:?}", F!("Error sending command to RTC - "), e).unwrap();
             },
         }
     }
 
     fn help_screen(context: &mut TTY, _: Option<&[u8]>) {
         ufmt::uwriteln!(&mut context.serial, "{}",
-            D!("key <OTP Key> - Set OTP key. \n\
-            key - Show current OTP key. \n\
-            digit <OTP Digits> - Set digits of OTP. (default is 6) \n\
-            digit - Show OTP digits setting. \n\
-            hotp <HOTP Counter> - Calculate OTP for a given counter value. \n\
-            totp - Calculate OTP for the current time. (step of 30) \n\
-            time <UNIX timestamp> - Set date and time. \n\
-            time - Show current date and time. \n\
-            temp - Show current temperature in Celsius. \n\
-            utemp - Force the RTC to update its temperature reading. \n\
-            read <addr> - Read a byte from RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
-            readp <addr> - Read a 32-byte page from the RTC EEPROM at the given 2-byte address. Must provide four hex digits. \n\
-            write <addr> <data> - Write a byte to the RTC EEPROM at the given 2-byte address. Must provide four and two hex digits. \n\
-            save - Save the current key into RTC EEPROM. \n\
-            load - Load the saved key from RTC EEPROM. \n\
+            D!("key <OTP Key> - Set OTP key.\n\
+            key - Show current OTP key.\n\
+            digit <OTP Digits> - Set digits of OTP. (default is 6)\n\
+            digit - Show OTP digits setting.\n\
+            hotp <HOTP Counter> - Calculate OTP for a given counter value.\n\
+            totp - Calculate OTP for the current time. (step of 30)\n\
+            time <UNIX timestamp> - Set date and time.\n\
+            time - Show current date and time.\n\
+            temp - Show current temperature in Celsius.\n\
+            utemp - Force the RTC to update its temperature reading.\n\
+            read <addr> - Read a byte from RTC EEPROM at the given 2-byte address. Must provide four hex digits.\n\
+            readp <addr> - Read a 32-byte page from the RTC EEPROM at the given 2-byte address. Must provide four hex digits.\n\
+            write <addr> <data> - Write a byte to the RTC EEPROM at the given 2-byte address. Must provide four and two hex digits.\n\
+            save - Save the current key into RTC EEPROM.\n\
+            load - Load the saved key from RTC EEPROM.\n\
             help - Show this help menu.")
             ).unwrap();
     }
